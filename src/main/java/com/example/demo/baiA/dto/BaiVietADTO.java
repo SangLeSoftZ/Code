@@ -1,16 +1,14 @@
-package com.example.demo.baiA;
+package com.example.demo.baiA.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
-public class BaiADTO {
+public class BaiVietADTO {
 
-    // @NotBlank: không cho phép null, rỗng "", hoặc chỉ toàn khoảng trắng "   "
     @NotBlank(message = "Tiêu đề không được để trống")
     private String tieuDe;
 
     private String noiDung;
 
-    // Getters & Setters
     public String getTieuDe() { return tieuDe; }
     public void setTieuDe(String tieuDe) { this.tieuDe = tieuDe; }
 

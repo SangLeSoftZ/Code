@@ -1,8 +1,9 @@
-package com.example.demo.baiB;
+package com.example.demo.baiB.dto;
 
+import com.example.demo.baiB.validator.KhongChuaTuCam;
 import jakarta.validation.constraints.NotBlank;
 
-public class BaiBDTO {
+public class BaiVietBDTO {
 
     @NotBlank(message = "Tiêu đề không được để trống")
     @KhongChuaTuCam(message = "Tiêu đề chứa từ bị cấm")
@@ -11,7 +12,6 @@ public class BaiBDTO {
     @KhongChuaTuCam(message = "Nội dung chứa từ bị cấm")
     private String noiDung;
 
-    // Getters & Setters
     public String getTieuDe() { return tieuDe; }
     public void setTieuDe(String tieuDe) { this.tieuDe = tieuDe; }
 

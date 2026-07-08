@@ -3,16 +3,15 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/shop_db
-    username: postgres
-    password: postgres
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:mariadb://localhost:3306/shop_db
+    username: root
+    password: sang123
+    driver-class-name: org.mariadb.jdbc.Driver
 
   jpa:
     show-sql: true
     hibernate:
-      ddl-auto: update
+      ddl-auto: none        # mình tự tạo bảng bằng SQL, không để Hibernate tự tạo
     properties:
       hibernate:
         format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
