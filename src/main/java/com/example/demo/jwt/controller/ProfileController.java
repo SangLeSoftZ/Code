@@ -3,12 +3,16 @@ package com.example.demo.jwt.controller;
 import com.example.demo.jwt.JwtUtil;
 import com.example.demo.jwt.entity.User;
 import com.example.demo.jwt.service.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 import java.util.Optional;
 
+@Tag(name = "Auth API", description = "Đăng nhập và xem thông tin profile")
 @RestController
 @RequestMapping("/api")
 public class ProfileController {
@@ -22,6 +26,9 @@ public class ProfileController {
     }
 
     // GET /api/profile — chỉ trả data nếu có token hợp lệ
+    @Operation(summary = "Lấy thông tin profile",
+               description = "Cần Bearer token trong header Authorization",
+               security = @SecurityRequirement(name = "bearerAuth"))
     @GetMapping("/profile")
     public ResponseEntity<?> getProfile(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
