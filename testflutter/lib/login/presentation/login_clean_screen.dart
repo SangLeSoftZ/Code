@@ -1,10 +1,23 @@
-import 'package:flutter/material.dart';
+// ════════════════════════════════════════════════════════════════
+// FILE: presentation/login_clean_screen.dart
+// LOẠI: Presentation (UI) + LOCAL STORAGE (SecureStorage)
+//
+// BUG #1 FIX: Sau login thành công → lưu token vào SecureStorage
+//   → Tắt app → mở lại → AuthStartup đọc token → vào thẳng ProfileScreen
+//
+// BUG #2 FIX: Hiển thị lỗi rõ ràng theo từng trường hợp:
+//   - Mất mạng       → "Không kết nối được: ..."
+//   - Sai password   → "Sai username hoặc mật khẩu"
+//   - Tài khoản khoá → "Tài khoản đã bị khóa"
+//   - Timeout        → "TimeoutException after ..."
+// ════════════════════════════════════════════════════════════════
 
+import 'package:flutter/material.dart';
 import '../injection_container.dart';
 import '../domain/usecases/login_usecase.dart';
+import '../data/datasources/auth_local_datasource.dart';
+import 'profile_screen.dart';
 
-/// Màn hình demo Clean Architecture — login với bảng users trong shop_db.
-/// User mẫu: admin / 123456 | user1 / 123456 | manager / 123456
 class LoginCleanScreen extends StatefulWidget {
   const LoginCleanScreen({super.key});
 
@@ -13,12 +26,13 @@ class LoginCleanScreen extends StatefulWidget {
 }
 
 class _LoginCleanScreenState extends State<LoginCleanScreen> {
-  // Điền sẵn user mẫu từ DB cho tiện test
   final _usernameCtrl = TextEditingController(text: 'admin');
   final _passCtrl = TextEditingController(text: '123456');
+  final _authLocal = AuthLocalDataSource();
 
-  String _result = 'Chưa gọi UseCase';
+  String? _errorMessage;
   bool _isLoading = false;
+  bool _obscurePass = true;
 
   @override
   void dispose() {
@@ -27,17 +41,14 @@ class _LoginCleanScreenState extends State<LoginCleanScreen> {
     super.dispose();
   }
 
-  // ── Gọi UseCase thật (cần Spring Boot đang chạy) ────────────────────
-
-  Future<void> _callUseCase() async {
+  // ── Đăng nhập — gọi API + lưu token ─────────────────────────
+  Future<void> _dangNhap() async {
     setState(() {
       _isLoading = true;
-      _result = 'Đang gọi API...';
+      _errorMessage = null;
     });
 
     final loginUseCase = getIt<LoginUseCase>();
-    debugPrint('[DI] LoginUseCase instance: $loginUseCase');
-
     final params = LoginParams(
       username: _usernameCtrl.text.trim(),
       password: _passCtrl.text,
@@ -45,29 +56,61 @@ class _LoginCleanScreenState extends State<LoginCleanScreen> {
 
     final (user, failure) = await loginUseCase(params);
 
-    setState(() {
-      _isLoading = false;
-      if (failure != null) {
-        _result = '❌ Lỗi: $failure';
-      } else {
-        _result =
-            '✅ Đăng nhập thành công!\n\n'
-            'id       : ${user!.id}\n'
-            'username : ${user.username}\n'
-            'email    : ${user.email}\n'
-            'role     : ${user.role}\n'
-            'active   : ${user.active}\n'
-            'token    : ${user.token.isEmpty ? "(server chưa trả token)" : user.token}';
-      }
-    });
+    if (!mounted) return;
+
+    if (failure != null) {
+      // ── BUG FIX: hiển thị lỗi rõ ràng theo loại failure ─────
+      setState(() {
+        _isLoading = false;
+        _errorMessage = _mapFailureMessage(failure.message);
+      });
+      return;
+    }
+
+    // ── BUG FIX #1: Lưu token vào SecureStorage sau login ──────
+    await _authLocal.saveAuthInfo(
+      token: user!.token,
+      username: user.username,
+      role: user.role,
+      userId: user.id,
+    );
+
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    // Chuyển sang ProfileScreen, xóa stack
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      (route) => false,
+    );
   }
 
-  // ── Test validation (không cần backend) ─────────────────────────────
+  // ── Chuyển message lỗi thành tiếng Việt dễ đọc ──────────────
+  String _mapFailureMessage(String raw) {
+    if (raw.contains('Sai username') || raw.contains('401')) {
+      return '❌ Sai username hoặc mật khẩu';
+    }
+    if (raw.contains('bị khóa') || raw.contains('403')) {
+      return '🔒 Tài khoản đã bị khóa. Liên hệ admin.';
+    }
+    if (raw.contains('TimeoutException') || raw.contains('timeout')) {
+      return '⏱ Kết nối timeout — server phản hồi quá chậm';
+    }
+    if (raw.contains('SocketException') || raw.contains('Connection refused')) {
+      return '📵 Không kết nối được server — kiểm tra WiFi hoặc Spring Boot';
+    }
+    if (raw.contains('trống') || raw.contains('ít nhất')) {
+      return '⚠️ $raw';
+    }
+    return '❌ $raw';
+  }
 
+  // ── Test validation (không cần backend) ─────────────────────
   Future<void> _testValidation() async {
     setState(() {
       _isLoading = true;
-      _result = 'Đang kiểm tra validation...';
+      _errorMessage = null;
     });
 
     final loginUseCase = getIt<LoginUseCase>();
@@ -87,117 +130,183 @@ class _LoginCleanScreenState extends State<LoginCleanScreen> {
 
     setState(() {
       _isLoading = false;
-      _result =
-          '── Kết quả Validation ──\n\n'
+      _errorMessage =
+          '── Kết quả Validation ──\n'
           '1. Username trống  : $f1\n'
           '2. Username < 3 ký : $f2\n'
           '3. Password trống  : $f3\n'
-          '4. Password < 6 ký : $f4\n\n'
-          '✅ getIt<LoginUseCase>() hoạt động bình thường!';
+          '4. Password < 6 ký : $f4';
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Clean Architecture — Login'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Thông tin luồng DI ─────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: const Text(
-                'Luồng DI:\n'
-                'getIt<LoginUseCase>()\n'
-                '  → LoginUseCase(AuthRepository)\n'
-                '  → AuthRepositoryImpl(AuthRemoteDataSource)\n'
-                '  → AuthRemoteDataSourceImpl(http.Client)\n\n'
-                'User mẫu: admin | user1 | manager\n'
-                'Password: 123456',
-                style: TextStyle(fontFamily: 'monospace', fontSize: 12),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ── Input: Username ────────────────────────────────────
-            TextField(
-              controller: _usernameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Username',
-                hintText: 'admin / user1 / manager',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person_outlined),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // ── Input: Password ────────────────────────────────────
-            TextField(
-              controller: _passCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                hintText: '123456',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.lock_outlined),
-              ),
-              obscureText: true,
-            ),
-
-            const SizedBox(height: 12),
-
-            // ── Buttons ────────────────────────────────────────────
-            FilledButton.icon(
-              onPressed: _isLoading ? null : _callUseCase,
-              icon: const Icon(Icons.login),
-              label: const Text('Đăng nhập (gọi API Spring Boot)'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _isLoading ? null : _testValidation,
-              icon: const Icon(Icons.checklist),
-              label: const Text('Test Validation (không cần backend)'),
-            ),
-
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-
-            // ── Kết quả ────────────────────────────────────────────
-            if (_isLoading)
-              const Center(child: CircularProgressIndicator())
-            else
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
+      backgroundColor: Colors.deepPurple.shade50,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Logo ─────────────────────────────────────────
+                const Icon(
+                  Icons.lock_rounded,
+                  size: 72,
+                  color: Colors.deepPurple,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Đăng nhập',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple,
                   ),
-                  child: SingleChildScrollView(
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'User mẫu: admin | user1 | manager\nPassword: 123456',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+
+                const SizedBox(height: 28),
+
+                // ── Username ─────────────────────────────────────
+                TextField(
+                  controller: _usernameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Username',
+                    hintText: 'admin / user1 / manager',
+                    prefixIcon: const Icon(Icons.person_outlined),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: 12),
+
+                // ── Password ─────────────────────────────────────
+                TextField(
+                  controller: _passCtrl,
+                  obscureText: _obscurePass,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: const Icon(Icons.lock_outlined),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePass ? Icons.visibility_off : Icons.visibility,
+                      ),
+                      onPressed:
+                          () => setState(() => _obscurePass = !_obscurePass),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _dangNhap(),
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── Thông báo lỗi ────────────────────────────────
+                if (_errorMessage != null)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color:
+                          _errorMessage!.startsWith('──')
+                              ? Colors.blue.shade50
+                              : Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color:
+                            _errorMessage!.startsWith('──')
+                                ? Colors.blue.shade200
+                                : Colors.red.shade200,
+                      ),
+                    ),
                     child: Text(
-                      _result,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
+                      _errorMessage!,
+                      style: TextStyle(
                         fontSize: 13,
+                        fontFamily:
+                            _errorMessage!.startsWith('──')
+                                ? 'monospace'
+                                : null,
+                        color:
+                            _errorMessage!.startsWith('──')
+                                ? Colors.blue.shade800
+                                : Colors.red.shade700,
                       ),
                     ),
                   ),
+
+                const SizedBox(height: 16),
+
+                // ── Nút đăng nhập ────────────────────────────────
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _isLoading ? null : _dangNhap,
+                  icon:
+                      _isLoading
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Icon(Icons.login),
+                  label: Text(
+                    _isLoading ? 'Đang đăng nhập...' : 'Đăng nhập',
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ),
-              ),
-          ],
+
+                const SizedBox(height: 8),
+
+                // ── Nút test validation ──────────────────────────
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _isLoading ? null : _testValidation,
+                  icon: const Icon(Icons.checklist),
+                  label: const Text('Test Validation (không cần backend)'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

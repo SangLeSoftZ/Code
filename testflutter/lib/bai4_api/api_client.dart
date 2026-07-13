@@ -1,55 +1,66 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'task_model.dart';
+import '../login/data/datasources/auth_local_datasource.dart';
 
 /// ApiClient gọi Task API Spring Boot.
-/// Khi chạy trên Android Emulator, dùng 10.0.2.2 thay vì localhost
-/// vì localhost trỏ vào emulator, còn 10.0.2.2 mới trỏ vào máy host.
+/// BUG FIX: Gắn Authorization: Bearer token vào mọi request
 class ApiClient {
-  // Đổi port nếu Spring Boot của bạn chạy port khác
   static const String _baseUrl = 'http://10.0.2.2:9090/api';
 
   final http.Client _client;
+  final AuthLocalDataSource _authLocal;
 
-  /// Cho phép inject http.Client tuỳ chỉnh (tiện cho việc test)
-  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+  ApiClient({http.Client? client, AuthLocalDataSource? authLocal})
+    : _client = client ?? http.Client(),
+      _authLocal = authLocal ?? AuthLocalDataSource();
 
-  // ─── GET /tasks ────────────────────────────────────────────────────────────
+  /// Tạo header đầy đủ — tự động lấy token từ SecureStorage
+  Future<Map<String, String>> _buildHeaders({
+    bool withContentType = false,
+  }) async {
+    final token = await _authLocal.getToken();
+    return {
+      'Accept': 'application/json',
+      if (withContentType) 'Content-Type': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
 
-  /// Lấy danh sách tất cả tác vụ từ server.
-  /// Trả về [List<Task>] khi thành công, ném [Exception] khi lỗi.
+  // ── GET /baiA ─────────────────────────────────────────────────────────────
+
   Future<List<Task>> layDanhSachTask() async {
     final uri = Uri.parse('$_baseUrl/baiA');
-
+    final headers = await _buildHeaders();
     try {
       final response = await _client
-          .get(uri, headers: {'Accept': 'application/json'})
+          .get(uri, headers: headers)
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final List<dynamic> jsonList =
-            jsonDecode(response.body) as List<dynamic>;
-        return jsonList
+        final List<dynamic> json = jsonDecode(response.body) as List<dynamic>;
+        return json
             .map((e) => Task.fromJson(e as Map<String, dynamic>))
             .toList();
+      } else if (response.statusCode == 401) {
+        throw Exception('Lỗi 401 — token hết hạn hoặc chưa đăng nhập');
       } else {
-        throw Exception(
-          'layDanhSachTask thất bại — HTTP ${response.statusCode}: ${response.body}',
-        );
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      // Bắt lỗi mạng (SocketException, TimeoutException, v.v.)
       throw Exception('layDanhSachTask lỗi kết nối: $e');
     }
   }
 
-  // ─── POST /tasks ───────────────────────────────────────────────────────────
+  // ── POST /baiA ────────────────────────────────────────────────────────────
 
-  /// Tạo tác vụ mới với [tieuDe] cho trước.
-  /// Trả về [Task] vừa tạo (kèm id từ server) khi thành công.
-  Future<Task> taoTask(String tieuDe, {String moTa = '', String trangThai = 'CHUA_XONG'}) async {
+  Future<Task> taoTask(
+    String tieuDe, {
+    String moTa = '',
+    String trangThai = 'CHUA_XONG',
+  }) async {
     final uri = Uri.parse('$_baseUrl/baiA');
-
+    final headers = await _buildHeaders(withContentType: true);
     final body = jsonEncode({
       'tieuDe': tieuDe,
       'moTa': moTa,
@@ -58,24 +69,23 @@ class ApiClient {
 
     try {
       final response = await _client
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: body,
-          )
+          .post(uri, headers: headers, body: body)
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        return Task.fromJson(
-          jsonDecode(response.body) as Map<String, dynamic>,
-        );
+        return Task.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+      } else if (response.statusCode == 400) {
+        // BUG FIX: hiện lỗi validation rõ ràng thay vì lỗi chung chung
+        final err = jsonDecode(response.body);
+        final msg =
+            err['message'] ??
+            err['errors']?.toString() ??
+            'Dữ liệu không hợp lệ';
+        throw Exception('Validation: $msg');
+      } else if (response.statusCode == 401) {
+        throw Exception('Lỗi 401 — token hết hạn hoặc chưa đăng nhập');
       } else {
-        throw Exception(
-          'taoTask thất bại — HTTP ${response.statusCode}: ${response.body}',
-        );
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
       throw Exception('taoTask lỗi kết nối: $e');

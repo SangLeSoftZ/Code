@@ -70,6 +70,7 @@ class _TaskScreenState extends State<TaskScreen> {
     try {
       final taskMoi = await _api.taoTask(tieuDe);
       _controller.clear();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Đã tạo task #${taskMoi.id}: ${taskMoi.tieuDe}'),
@@ -115,8 +116,10 @@ class _TaskScreenState extends State<TaskScreen> {
                     decoration: const InputDecoration(
                       hintText: 'Nhập tiêu đề tác vụ mới...',
                       border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                     ),
                     onSubmitted: (_) => _taoTask(),
                   ),
@@ -160,24 +163,25 @@ class _TaskScreenState extends State<TaskScreen> {
 
           // ── Danh sách task ──
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _tasks.isEmpty
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _tasks.isEmpty
                     ? const Center(
-                        child: Text(
-                          'Chưa có tác vụ nào.\nNhấn "Tạo" để thêm mới!',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        itemCount: _tasks.length,
-                        itemBuilder: (context, index) {
-                          final task = _tasks[index];
-                          return _TaskCard(task: task);
-                        },
+                      child: Text(
+                        'Chưa có tác vụ nào.\nNhấn "Tạo" để thêm mới!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
                       ),
+                    )
+                    : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      itemCount: _tasks.length,
+                      itemBuilder: (context, index) {
+                        final task = _tasks[index];
+                        return _TaskCard(task: task);
+                      },
+                    ),
           ),
         ],
       ),
@@ -219,7 +223,7 @@ class _TaskCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: _statusColor.withOpacity(0.15),
+          backgroundColor: _statusColor.withValues(alpha: 0.15),
           child: Text(
             '#${task.id}',
             style: TextStyle(
@@ -235,15 +239,13 @@ class _TaskCard extends StatelessWidget {
         ),
         subtitle: task.moTa.isNotEmpty ? Text(task.moTa) : null,
         trailing: Chip(
-          label: Text(
-            _statusLabel,
-            style: const TextStyle(fontSize: 11),
-          ),
-          backgroundColor: _statusColor.withOpacity(0.1),
-          side: BorderSide(color: _statusColor.withOpacity(0.4)),
+          label: Text(_statusLabel, style: const TextStyle(fontSize: 11)),
+          backgroundColor: _statusColor.withValues(alpha: 0.1),
+          side: BorderSide(color: _statusColor.withValues(alpha: 0.4)),
           padding: EdgeInsets.zero,
         ),
       ),
     );
   }
 }
+
